@@ -1,0 +1,79 @@
+name: Read from MongoDB
+description: Reads data from a MongoDB collection and saves it as a CSV file.
+
+inputs:
+  - {
+      name: Mongo URI,
+      type: String,
+      description: "MongoDB connection URI, e.g. mongodb://user:pass@host:port/",
+    }
+  - {
+      name: Database,
+      type: String,
+      description: "Name of the MongoDB database",
+    }
+  - {
+      name: Collection,
+      type: String,
+      description: "Name of the MongoDB collection",
+    }
+  - {
+      name: Query,
+      type: String,
+      default: "{}",
+      description: "MongoDB query in JSON format (default: empty filter)",
+    }
+
+outputs:
+  - { name: Data, type: Dataset, description: "Output dataset in CSV format" }
+
+metadata:
+  annotations:
+    author: Sharath K R
+    based_on: "https://raw.githubusercontent.com/Ark-kun/pipeline_components/master/components/web/Download/component.yaml"
+    description: "Fetches tabular data from MongoDB using pymongo and exports to CSV."
+
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -exc
+      - |
+        pip install pymongo pandas >/dev/null 2>&1
+
+        mongo_uri="$0"
+        database="$1"
+        collection="$2"
+        query_json="$3"
+        output_path="$4"
+
+        export mongo_uri database collection query_json output_path
+
+        python - <<'PYCODE'
+        import os, json, pandas as pd
+        from pymongo import MongoClient
+
+        uri = os.environ["mongo_uri"]
+        db_name = os.environ["database"]
+        collection_name = os.environ["collection"]
+        query = json.loads(os.environ["query_json"])
+        output_path = os.environ["output_path"]
+
+        client = MongoClient(uri)
+        db = client[db_name]
+        col = db[collection_name]
+
+        data = list(col.find(query))
+        if not data:
+            print("No data found for given query.")
+        else:
+            df = pd.DataFrame(data)
+            df.to_csv(output_path, index=False)
+            print(f"Exported {len(df)} rows to {output_path}")
+        PYCODE
+      - inputValue: Mongo URI
+      - inputValue: Database
+      - inputValue: Collection
+      - inputValue: Query
+      - outputPath: Data
