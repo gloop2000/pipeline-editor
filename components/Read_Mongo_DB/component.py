@@ -29,28 +29,31 @@ database = '{database}'
 collection = '{collection}'
 query = '{query}'
 output_path = '{output_csv}'
-
-client = MongoClient(mongo_uri)
-db = client[database]
-col = db[collection]
-
 try:
-    query_obj = json.loads(query)
-except Exception:
-    print("Invalid JSON query. Using empty filter {{}} instead.")
-    query_obj = {{}}
+    client = MongoClient(mongo_uri)
+    db = client[database]
+    col = db[collection]
 
-data = list(col.find(query_obj))
-if not data:
-    print("No data found for given query.")
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame().to_csv(output_path, index=False)
-else:
-    df = pd.DataFrame(data)
-    if "_id" in df.columns:
-        df = df.drop(columns=["_id"])
-    df.to_csv(output_path, index=False)
-    print(f"Exported {{len(df)}} records to {{output_path}}")
+    try:
+        query_obj = json.loads(query)
+    except Exception:
+        print("Invalid JSON query. Using empty filter {{}} instead.")
+        query_obj = {{}}
+
+    data = list(col.find(query_obj))
+    if not data:
+        print("No data found for given query.")
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame().to_csv(output_path, index=False)
+    else:
+        df = pd.DataFrame(data)
+        if "_id" in df.columns:
+            df = df.drop(columns=["_id"])
+        df.to_csv(output_path, index=False)
+        print(f"Exported {{len(df)}} records to {{output_path}}")
+        print(df.head())
+finally:
+    client.close()
 """
 ]
 
