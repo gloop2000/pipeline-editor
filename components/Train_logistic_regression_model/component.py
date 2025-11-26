@@ -3,7 +3,7 @@ import sys
 import os
 
 # --- Configuration: replace these with your MongoDB details ---
-input_csv = "test_data.csv"       # Input CSV file path
+input_csv = "train_data.csv"       # Input CSV file path
 label_column = "Outcome"          # Label column name
 model_path = "output/model.pkl"  # Output model file path
 
