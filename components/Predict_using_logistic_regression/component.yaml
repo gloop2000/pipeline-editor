@@ -1,0 +1,95 @@
+name: Predict with logistic regression model (from CSV)
+description: Uses a trained Scikit-learn logistic regression model to make predictions on input CSV.
+metadata:
+  annotations:
+    author: Sharath K R
+
+inputs:
+  - { name: model, type: ScikitLearnPickleModel }
+  - { name: dataset, type: CSV, description: "Input CSV containing features." }
+
+outputs:
+  - { name: predictions, type: CSV }
+
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -c
+      - >
+        (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'scikit-learn==1.0.2' 'pandas==1.4.1'
+        || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'scikit-learn==1.0.2' 'pandas==1.4.1' --user)
+        && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def predict_logistic_regression_from_CSV(
+            model_path,
+            dataset_path,
+            predictions_path,
+        ):
+            """Load a trained logistic regression model and predict."""
+
+            import pandas
+            import pickle
+
+            # Load model
+            with open(model_path, "rb") as f:
+                model = pickle.load(f)
+
+            df = pandas.read_csv(dataset_path)
+
+            # Predict class labels
+            y_pred = model.predict(df)
+
+            # Predict probabilities (if available)
+            try:
+                y_proba = model.predict_proba(df)
+                has_proba = True
+            except Exception:
+                has_proba = False
+
+            # Prepare output dataframe
+            output = pandas.DataFrame()
+            output["prediction"] = y_pred
+
+            if has_proba:
+                for i in range(y_proba.shape[1]):
+                    output[f"probability_class_{i}"] = y_proba[:, i]
+
+            output.to_csv(predictions_path, index=False)
+            print(f"Predictions saved to: {predictions_path}")
+
+        import argparse
+        parser = argparse.ArgumentParser(
+            prog='Predict with logistic regression model',
+            description='Uses trained sklearn logistic regression model to make predictions.'
+        )
+
+        parser.add_argument("--model", dest="model_path", type=str, required=True)
+        parser.add_argument("--dataset", dest="dataset_path", type=str, required=True)
+        parser.add_argument("--predictions", dest="predictions_path", type=_make_parent_dirs_and_return_path, required=True)
+
+        args = vars(parser.parse_args())
+
+        predict_logistic_regression_from_CSV(**args)
+
+    args:
+      - --model
+      - { inputPath: model }
+      - --dataset
+      - { inputPath: dataset }
+      - --predictions
+      - { outputPath: predictions }
