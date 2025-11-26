@@ -1,0 +1,111 @@
+name: Read from MongoDB
+description: Reads data from a MongoDB collection and saves it as a CSV file.
+metadata:
+  annotations:
+    author: Sharath K R
+
+inputs:
+  - {
+      name: Mongo URI,
+      type: String,
+      description: "MongoDB connection URI, e.g. mongodb://user:pass@host:port/",
+    }
+  - {
+      name: Database,
+      type: String,
+      description: "Name of the MongoDB database",
+    }
+  - {
+      name: Collection,
+      type: String,
+      description: "Name of the MongoDB collection",
+    }
+  - {
+      name: Query,
+      type: String,
+      default: "{}",
+      optional: true,
+      description: "MongoDB query in JSON format (default: empty filter {})",
+    }
+
+outputs:
+  - { name: Data, type: CSV, description: "Output dataset in CSV format" }
+
+implementation:
+  container:
+    image: python:3.10
+    command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pymongo==4.6.3' 'pandas==2.2.2' ||PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pymongo' 'pandas' --user) && "$0" "$@"
+      - python3
+      - "-u"
+      - "-c"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def read_from_mongodb(
+            mongo_uri: str,
+            database: str,
+            collection: str,
+            query: str,
+            output_path: str,
+        ):
+            import json
+            import pandas as pd
+            from pymongo import MongoClient
+            from pathlib import Path
+            try:
+              client = MongoClient(mongo_uri)
+              db = client[database]
+              col = db[collection]
+
+              # Parse optional query
+              try:
+                  query_obj = json.loads(query)
+              except Exception:
+                  print("Invalid JSON query. Using empty filter {} instead.")
+                  query_obj = {}
+
+              data = list(col.find(query_obj))
+              if not data:
+                  print("No data found for given query.")
+                  Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+                  pd.DataFrame().to_csv(output_path, index=False)
+                  return
+
+              df = pd.DataFrame(data)
+              if "_id" in df.columns:
+                  df = df.drop(columns=["_id"])
+              df.to_csv(output_path, index=False)
+              print(f"Exported {len(df)} records to {output_path}")
+            finally:
+              client.close()
+        import argparse
+        _parser = argparse.ArgumentParser(
+            prog='Read from MongoDB',
+            description='Reads data from a MongoDB collection and saves it as CSV.'
+        )
+        _parser.add_argument("--Mongo-URI", dest="mongo_uri", type=str, required=True)
+        _parser.add_argument("--Database", dest="database", type=str, required=True)
+        _parser.add_argument("--Collection", dest="collection", type=str, required=True)
+        _parser.add_argument("--Query", dest="query", type=str, required=False, default="{}")
+        _parser.add_argument("--Data", dest="output_path", type=_make_parent_dirs_and_return_path, required=True)
+
+        _parsed_args = vars(_parser.parse_args())
+        _outputs = read_from_mongodb(**_parsed_args)
+
+    args:
+      - --Mongo-URI
+      - { inputValue: Mongo URI }
+      - --Database
+      - { inputValue: Database }
+      - --Collection
+      - { inputValue: Collection }
+      - --Query
+      - { inputValue: Query, default: "{}" }
+      - --Data
+      - { outputPath: Data }

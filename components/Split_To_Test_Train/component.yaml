@@ -1,0 +1,104 @@
+name: Train Test Split
+description: Splits a CSV dataset into train and test subsets.
+metadata:
+  annotations:
+    author: Sharath K R
+
+inputs:
+  - { name: Input Data, type: CSV, description: "Input CSV file to split." }
+  - {
+      name: Test Size,
+      type: Float,
+      description: "Fraction of data for test set (0–1).",
+      default: "0.2",
+    }
+  - {
+      name: Random State,
+      type: Integer,
+      description: "Random seed for reproducibility.",
+      default: "42",
+    }
+
+outputs:
+  - { name: Train Data, type: CSV, description: "Training dataset CSV file." }
+  - { name: Test Data, type: CSV, description: "Test dataset CSV file." }
+
+implementation:
+  container:
+    image: python:3.10
+    command:
+      - sh
+      - -c
+      - >
+        (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'pandas==2.2.2' 'numpy==1.26.4' 'scikit-learn==1.4.2'
+        || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'pandas' 'numpy' 'scikit-learn' --user)
+        && "$0" "$@"
+      - python3
+      - "-u"
+      - "-c"
+      - |
+        import pandas as pd
+        from sklearn.model_selection import train_test_split
+        from pathlib import Path
+
+        def _make_parent_dirs_and_return_path(path: str):
+            import os
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            return path
+
+        def train_test_split_component(input_path: str, test_size: str, random_state: str, train_path: str, test_path: str):
+
+            df = pd.read_csv(input_path)
+
+            try:
+                test_size = float(test_size)
+                if not (0 < test_size < 1):
+                    raise ValueError
+            except Exception:
+                raise ValueError("Test Size must be a float between 0 and 1.")
+
+            try:
+                random_state = int(random_state)
+            except Exception:
+                raise ValueError("Random State must be an integer.")
+
+            train_df, test_df = train_test_split(
+                df,
+                test_size=test_size,
+                random_state=random_state,
+                shuffle=True
+            )
+
+            train_df.to_csv(train_path, index=False)
+            test_df.to_csv(test_path, index=False)
+
+            print(f"Train samples: {len(train_df)}, Test samples: {len(test_df)}")
+            print(f"Train saved to: {train_path}")
+            print(f"Test saved to: {test_path}")
+
+        import argparse
+        parser = argparse.ArgumentParser(description="Train Test Split Component")
+
+        parser.add_argument("--Input-Data", dest="input_path", type=str, required=True)
+        parser.add_argument("--Test-Size", dest="test_size", type=str, required=True)
+        parser.add_argument("--Random-State", dest="random_state", type=str, required=True)
+        parser.add_argument("--Train-Data", dest="train_path", type=_make_parent_dirs_and_return_path, required=True)
+        parser.add_argument("--Test-Data", dest="test_path", type=_make_parent_dirs_and_return_path, required=True)
+
+        args = vars(parser.parse_args())
+
+        train_test_split_component(**args)
+
+    args:
+      - --Input-Data
+      - { inputPath: Input Data }
+      - --Test-Size
+      - { inputValue: Test Size }
+      - --Random-State
+      - { inputValue: Random State }
+      - --Train-Data
+      - { outputPath: Train Data }
+      - --Test-Data
+      - { outputPath: Test Data }

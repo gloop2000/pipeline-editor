@@ -1,0 +1,86 @@
+name: Handle Invalid Zero Values
+description: Replaces invalid zero values in specified columns with NaN.
+metadata:
+  annotations:
+    author: Sharath K R
+
+inputs:
+  - { name: Input CSV, type: CSV, description: "Input dataset in CSV format" }
+  - {
+      name: Columns,
+      type: JsonArray,
+      description: 'List of column names where zero is considered invalid, e.g. ["Glucose", "BloodPressure"]',
+    }
+
+outputs:
+  - {
+      name: Cleaned Data,
+      type: CSV,
+      description: "Output dataset with zeros replaced by NaN",
+    }
+
+implementation:
+  container:
+    image: python:3.10
+    command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas==2.2.2' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas' --user) && "$0" "$@"
+      - python3
+      - "-u"
+      - "-c"
+      - |
+        import argparse
+        import json
+        import pandas as pd
+        import numpy as np
+        from pathlib import Path
+        import os
+
+        def _make_parent_dirs_and_return_path(file_path: str):
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def handle_invalid_zero_values(input_csv: str, columns: str, output_path: str):
+            """Replaces zero values in specified columns with NaN."""
+            df = pd.read_csv(input_csv)
+
+            try:
+                cols = json.loads(columns)
+                if not isinstance(cols, list):
+                    raise ValueError
+            except Exception:
+                raise ValueError("Columns parameter must be a valid JSON array of column names.")
+
+            for col in cols:
+                if col in df.columns:
+                    df[col] = df[col].replace(0, np.nan)
+                else:
+                    print(f"Warning: Column '{col}' not found in dataset.")
+
+            df.to_csv(output_path, index=False)
+            print(f"Processed CSV saved to {output_path}")
+
+        _parser = argparse.ArgumentParser(
+            prog="Handle Invalid Zero Values",
+            description="Replaces invalid zero values in specified columns with NaN."
+        )
+        _parser.add_argument("--Input-CSV", dest="input_csv", type=str, required=True)
+        _parser.add_argument("--Columns", dest="columns", type=str, required=True)
+        _parser.add_argument(
+            "--Cleaned-Data",
+            dest="output_path",
+            type=_make_parent_dirs_and_return_path,
+            required=True
+        )
+
+        args = vars(_parser.parse_args())
+        handle_invalid_zero_values(**args)
+
+    args:
+      - --Input-CSV
+      - { inputPath: Input CSV }
+      - --Columns
+      - { inputValue: Columns }
+      - --Cleaned-Data
+      - { outputPath: Cleaned Data }

@@ -1,0 +1,84 @@
+name: Median Impute
+description: Replaces missing or NaN values in selected columns using column medians.
+metadata:
+  annotations:
+    author: Sharath K R
+
+inputs:
+  - {
+      name: Input Data,
+      type: CSV,
+      description: "Input CSV file containing missing values.",
+    }
+  - {
+      name: Columns,
+      type: JsonArray,
+      description: "JSON array of columns where missing values should be imputed using median.",
+    }
+
+outputs:
+  - {
+      name: Output Data,
+      type: CSV,
+      description: "CSV file after median imputation.",
+    }
+
+implementation:
+  container:
+    image: python:3.10
+    command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas==2.2.2' 'numpy==1.26.4' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas' 'numpy' --user) && "$0" "$@"
+      - python3
+      - "-u"
+      - "-c"
+      - |
+        import json
+        import pandas as pd
+        import numpy as np
+        from pathlib import Path
+
+        def _make_parent_dirs_and_return_path(path: str):
+            import os
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            return path
+
+        def median_impute(input_path: str, columns: str, output_path: str):
+            df = pd.read_csv(input_path)
+
+            # Parse Columns JSON
+            try:
+                cols = json.loads(columns)
+                if not isinstance(cols, list):
+                    raise ValueError
+            except Exception:
+                raise ValueError("Columns must be a valid JSON array.")
+
+            for col in cols:
+                if col not in df.columns:
+                    print(f"Warning: Column '{col}' not found. Skipping.")
+                    continue
+
+                median_value = df[col].median(skipna=True)
+                df[col] = df[col].fillna(median_value)
+
+            df.to_csv(output_path, index=False)
+            print(f"Median imputation complete. Output saved to: {output_path}")
+
+        import argparse
+        parser = argparse.ArgumentParser(description="Median Impute Missing Values")
+        parser.add_argument("--Input-Data", dest="input_path", type=str, required=True)
+        parser.add_argument("--Columns", dest="columns", type=str, required=True)
+        parser.add_argument("--Output-Data", dest="output_path", type=_make_parent_dirs_and_return_path, required=True)
+
+        args = vars(parser.parse_args())
+        median_impute(**args)
+
+    args:
+      - --Input-Data
+      - { inputPath: Input Data }
+      - --Columns
+      - { inputValue: Columns }
+      - --Output-Data
+      - { outputPath: Output Data }

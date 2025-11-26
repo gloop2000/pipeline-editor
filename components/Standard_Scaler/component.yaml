@@ -1,0 +1,87 @@
+name: Standard Scaling
+description: Applies StandardScaler (mean=0, std=1) to selected numeric columns.
+metadata:
+  annotations:
+    author: Sharath K R
+
+inputs:
+  - { name: Input Data, type: CSV, description: "Input CSV file to scale." }
+  - {
+      name: Columns,
+      type: JsonArray,
+      description: "JSON array of column names to scale using StandardScaler.",
+    }
+
+outputs:
+  - {
+      name: Output Data,
+      type: CSV,
+      description: "CSV file after standard scaling.",
+    }
+
+implementation:
+  container:
+    image: python:3.10
+    command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas==2.2.2' 'numpy==1.26.4' 'scikit-learn==1.4.2' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas' 'numpy' 'scikit-learn' --user) && "$0" "$@"
+      - python3
+      - "-u"
+      - "-c"
+      - |
+        import json
+        import pandas as pd
+        from sklearn.preprocessing import StandardScaler
+        from pathlib import Path
+
+        def _make_parent_dirs_and_return_path(path: str):
+            import os
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            return path
+
+        def standard_scaling(input_path: str, columns: str, output_path: str):
+            df = pd.read_csv(input_path)
+
+            # Parse JSON array
+            try:
+                cols = json.loads(columns)
+                if not isinstance(cols, list):
+                    raise ValueError
+            except Exception:
+                raise ValueError("Columns must be a valid JSON array.")
+
+            missing_cols = [c for c in cols if c not in df.columns]
+            if missing_cols:
+                print(f"Warning: Columns not found: {missing_cols}. They will be skipped.")
+
+            scaler = StandardScaler()
+
+            valid_cols = [c for c in cols if c in df.columns]
+
+            if not valid_cols:
+                print("No valid columns found for scaling. Copying input to output.")
+                df.to_csv(output_path, index=False)
+                return
+
+            df[valid_cols] = scaler.fit_transform(df[valid_cols])
+
+            df.to_csv(output_path, index=False)
+            print(f"Standard scaling applied. Output saved to: {output_path}")
+
+        import argparse
+        parser = argparse.ArgumentParser(description="Standard Scaling Component")
+        parser.add_argument("--Input-Data", dest="input_path", type=str, required=True)
+        parser.add_argument("--Columns", dest="columns", type=str, required=True)
+        parser.add_argument("--Output-Data", dest="output_path", type=_make_parent_dirs_and_return_path, required=True)
+
+        args = vars(parser.parse_args())
+        standard_scaling(**args)
+
+    args:
+      - --Input-Data
+      - { inputPath: Input Data }
+      - --Columns
+      - { inputValue: Columns }
+      - --Output-Data
+      - { outputPath: Output Data }
